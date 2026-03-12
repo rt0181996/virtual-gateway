@@ -1,0 +1,23 @@
+POST http://localhost:1026/v2/entities
+Content-Type: application/json
+
+{
+  "id": "Battery002",
+  "type": "EnergyDevice",
+  "deviceType": {
+    "type": "Text",
+    "value": "battery"
+  },
+  "community": {
+    "type": "Text",
+    "value": "BlockB"
+  },
+  "realPower": {
+    "type": "Number",
+    "value": 150
+  },
+  "status": {
+    "type": "Text",
+    "value": "active"
+  }
+}
