@@ -74,3 +74,9 @@ services:
       - INFLUX_ORG=virtual-gateway
       - INFLUX_BUCKET=energy_readings
       - ORION_URL=http://orion:1026
+
+  dataspace-connector:
+    image: ghcr.io/international-data-spaces-association/dataspace-connector:latest
+    container_name: dataspace-connector
+    ports:
+      - "8181:8080"
