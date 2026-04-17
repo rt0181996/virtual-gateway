@@ -15,11 +15,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from routers import devices, dr_events, readings
+from routers import devices, dr_events, readings, blocks
 
 app.include_router(devices.router, prefix="/api/v1", tags=["Devices"])
 app.include_router(dr_events.router, prefix="/api/v1", tags=["DR Events"])
 app.include_router(readings.router, prefix="/api/v1", tags=["Readings"])
+app.include_router(blocks.router, prefix="/api/v1", tags=["Blocks"])
 
 @app.get("/")
 def root():

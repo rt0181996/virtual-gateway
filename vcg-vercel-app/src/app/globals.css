@@ -2,106 +2,120 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --paytm-blue: #00b9f1;
-  --paytm-dark: #002970;
-  --paytm-navy: #001f5b;
-  --paytm-cyan: #00d4ff;
-  --paytm-green: #00c853;
-  --paytm-orange: #ff6d00;
-  --paytm-red: #ff1744;
-  --paytm-purple: #7c4dff;
-}
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=Share+Tech+Mono&family=Orbitron:wght@700;900&display=swap');
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --red: #e63946;
+  --red-dark: #c1121f;
+  --gold: #ffd60a;
+  --gold-dark: #e5b800;
+  --arc: #58c4dc;
+  --navy: #0a0c10;
 }
 
 body {
-  font-family: 'Nunito', sans-serif;
-  background: #f0f4f8;
+  background: #0a0c10;
+  color: #f0e6d3;
+  font-family: 'Plus Jakarta Sans', sans-serif;
   min-height: 100vh;
 }
 
-.mono {
-  font-family: 'Space Mono', monospace;
-}
+.mono { font-family: 'Share Tech Mono', monospace; }
+.orb  { font-family: 'Orbitron', monospace; }
 
-/* Paytm-style gradient header */
-.paytm-header {
-  background: linear-gradient(135deg, #002970 0%, #00b9f1 100%);
-}
-
-/* Card shine effect */
-.card-shine {
-  position: relative;
-  overflow: hidden;
-}
-.card-shine::after {
+/* Deep Iron Man gradient background */
+body::before {
   content: '';
-  position: absolute;
-  top: -50%;
-  left: -60%;
-  width: 30%;
-  height: 200%;
-  background: rgba(255,255,255,0.08);
-  transform: rotate(20deg);
+  position: fixed;
+  top: 0; left: 0; right: 0; height: 300px;
+  background: linear-gradient(135deg,
+    #0a0c10 0%,
+    #1a0505 30%,
+    #2d0808 60%,
+    #1a0a00 100%);
+  z-index: 0;
   pointer-events: none;
 }
 
-/* Pulse animation for live dot */
-@keyframes pulse-ring {
-  0% { transform: scale(0.8); opacity: 1; }
-  100% { transform: scale(2.2); opacity: 0; }
-}
-.live-dot::before {
+/* Iron Man hex grid pattern */
+body::after {
   content: '';
-  position: absolute;
+  position: fixed;
   inset: 0;
+  background-image:
+    radial-gradient(circle, rgba(230,57,70,0.04) 1px, transparent 1px),
+    radial-gradient(circle, rgba(255,214,10,0.025) 1px, transparent 1px);
+  background-size: 30px 30px, 60px 60px;
+  background-position: 0 0, 15px 15px;
+  z-index: 0;
+  pointer-events: none;
+}
+
+@keyframes slideUp   { from{opacity:0;transform:translateY(18px)} to{opacity:1;transform:translateY(0)} }
+@keyframes fadeIn    { from{opacity:0} to{opacity:1} }
+@keyframes spin      { to{transform:rotate(360deg)} }
+@keyframes pulseRed  { 0%,100%{opacity:1} 50%{opacity:0.4} }
+@keyframes barGrow   { from{height:0;opacity:0} to{opacity:1} }
+@keyframes arcPulse  {
+  0%,100%{box-shadow:0 0 10px rgba(88,196,220,0.4),0 0 20px rgba(230,57,70,0.2)}
+  50%{box-shadow:0 0 24px rgba(88,196,220,0.8),0 0 48px rgba(255,214,10,0.3)}
+}
+@keyframes goldGlow  {
+  0%,100%{text-shadow:0 0 8px rgba(255,214,10,0.4)}
+  50%{text-shadow:0 0 20px rgba(255,214,10,0.9),0 0 40px rgba(255,214,10,0.3)}
+}
+@keyframes countPop  {
+  0%{transform:scale(1.2);opacity:0.6}
+  100%{transform:scale(1);opacity:1}
+}
+@keyframes pageEnter {
+  from{opacity:0;transform:translateY(12px)}
+  to{opacity:1;transform:translateY(0)}
+}
+@keyframes particleFloat {
+  0%,100%{transform:translateY(0) translateX(0);opacity:0.7}
+  50%{transform:translateY(-15px) translateX(8px);opacity:0.3}
+}
+@keyframes loadBar   { from{width:0} to{width:100%} }
+@keyframes blink     { 50%{opacity:0.2} }
+@keyframes arcSpin   { to{transform:rotate(360deg)} }
+@keyframes arcPulse2 {
+  0%,100%{opacity:1;transform:scale(1)}
+  50%{opacity:0.6;transform:scale(0.94)}
+}
+
+.su  { animation: slideUp  0.4s ease forwards; }
+.fi  { animation: fadeIn   0.3s ease forwards; }
+.spin-anim { animation: spin 1s linear infinite; }
+
+.d1{animation-delay:.05s;opacity:0}.d2{animation-delay:.10s;opacity:0}
+.d3{animation-delay:.15s;opacity:0}.d4{animation-delay:.20s;opacity:0}
+.d5{animation-delay:.25s;opacity:0}.d6{animation-delay:.30s;opacity:0}
+
+/* Iron Man scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #e63946, #ffd60a);
+  border-radius: 4px;
+}
+
+/* Range input Iron Man style */
+input[type='range'] {
+  -webkit-appearance: none;
+  height: 6px;
+  border-radius: 3px;
+  outline: none;
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
-  background: #00c853;
-  animation: pulse-ring 1.5s ease-out infinite;
+  background: linear-gradient(135deg, #c1121f, #ffd60a);
+  cursor: pointer;
+  box-shadow: 0 0 8px rgba(255,214,10,0.5);
+  border: 2px solid #0d1117;
 }
-
-/* Slide up animation */
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.animate-slideup {
-  animation: slideUp 0.5s ease forwards;
-}
-.animate-slideup-d1 { animation-delay: 0.1s; opacity: 0; }
-.animate-slideup-d2 { animation-delay: 0.2s; opacity: 0; }
-.animate-slideup-d3 { animation-delay: 0.3s; opacity: 0; }
-.animate-slideup-d4 { animation-delay: 0.4s; opacity: 0; }
-
-/* Spin */
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-.spinning {
-  animation: spin 1s linear infinite;
-}
-
-/* Number counter */
-@keyframes countup {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-/* Wave animation */
-@keyframes wave {
-  0%, 100% { transform: scaleY(1); }
-  50% { transform: scaleY(1.6); }
-}
-.wave-bar {
-  animation: wave 1.2s ease-in-out infinite;
-}
-
-/* Scrollbar */
-::-webkit-scrollbar { width: 4px; }
-::-webkit-scrollbar-track { background: #f0f4f8; }
-::-webkit-scrollbar-thumb { background: #00b9f1; border-radius: 4px; }
