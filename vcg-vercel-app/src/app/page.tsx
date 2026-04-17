@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 
 const API = 'https://virtual-gateway.onrender.com'
 const API_V1 = 'https://virtual-gateway.onrender.com/api/v1'
+const BLOCKS_API = 'https://virtual-gateway.onrender.com/api/v1/blocks'
 const FIWARE = 'http://localhost:1026' // Local Orion broker
 const APP_URL = 'https://vcg-webapp.vercel.app'
 
@@ -225,6 +226,9 @@ export default function VCGApp() {
   // ── localStorage: save blocks/devices on change ──────────────────────────
   useEffect(()=>{
     try{localStorage.setItem('vcg_blocks',JSON.stringify(blocks))}catch{}
+    // Sync non-default blocks to API
+    const customBlocks=blocks.filter(b=>!['BLK-A','BLK-B','BLK-C','BLK-D'].includes(b.id))
+    if(customBlocks.length>0) syncBlocksToAPI(customBlocks)
   },[blocks])
   useEffect(()=>{
     try{localStorage.setItem('vcg_devices',JSON.stringify(devices))}catch{}
@@ -317,6 +321,60 @@ export default function VCGApp() {
         setEndpointHealth(p=>({...p,[ep]:{status:'error',latency:Date.now()-start}}))
       }
     }
+  },[])
+
+  // ── Sync blocks to/from API ───────────────────────────────────────────────
+  const syncBlocksToAPI=useCallback(async(blocksToSync:Block[])=>{
+    try{
+      for(const b of blocksToSync){
+        await fetch(BLOCKS_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)})
+      }
+    }catch(e){console.log('Sync to API failed:',e)}
+  },[])
+
+  const loadBlocksFromAPI=useCallback(async()=>{
+    try{
+      const r=await fetch(BLOCKS_API)
+      if(r.ok){
+        const d=await r.json()
+        if(d.blocks&&d.blocks.length>0){
+          setBlocks(d.blocks)
+          addNotification({title:'🔄 Synced from API',message:`${d.blocks.length} blocks loaded from server`,type:'success'})
+        }
+      }
+    }catch(e){console.log('Load from API failed:',e)}
+  },[])
+
+  const saveGroup12ToAPI=useCallback(async(data:any)=>{
+    try{
+      await fetch(BLOCKS_API+'/group12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
+    }catch(e){console.log('Save Group12 to API failed:',e)}
+  },[])
+
+  const loadGroup12FromAPI=useCallback(async()=>{
+    try{
+      const r=await fetch(BLOCKS_API+'/group12')
+      if(r.ok){
+        const d=await r.json()
+        if(d.data){
+          const {block,devices:devs,sensors:sens}=d.data
+          if(block&&!blocks.find(b=>b.id===block.id)){
+            addBlock(block)
+            if(devs) devs.forEach((dev:Device)=>addDevice(dev))
+            if(sens) setSensors((p:any)=>({...p,[block.id]:sens}))
+            addNotification({title:'🤝 Group 12 Loaded',message:'Group 12 data synced from server',type:'success'})
+          }
+        }
+      }
+    }catch(e){console.log('Load Group12 from API failed:',e)}
+  },[blocks])
+
+  // Load from API on startup
+  useEffect(()=>{
+    setTimeout(()=>{
+      loadBlocksFromAPI()
+      loadGroup12FromAPI()
+    },2000) // wait 2s for API to wake up
   },[])
 
   const checkApi=useCallback(async()=>{
@@ -544,7 +602,7 @@ export default function VCGApp() {
         {screen==='register'  && <RegisterScreen  T={T} blocks={blocks} activeBlock={activeBlock} onBack={()=>setScreen(activeBlock?'block':'home')} apiOnline={apiOnline} onDeviceAdded={addDevice} cardStyle={cardStyle} ironBtn={ironBtn} lbl={lbl} inp={inp} />}
         {screen==='import'    && <ImportScreen    T={T} blocks={blocks} onBack={goHome} onBlocksImported={(bs:Block[])=>{bs.forEach(b=>addBlock(b));goHome()}} onDevicesImported={(ds:Device[])=>{ds.forEach(d=>addDevice(d))}} cardStyle={cardStyle} ironBtn={ironBtn} />}
         {screen==='simulator' && <SimulatorScreen T={T} blocks={blocks} apiOnline={apiOnline} isOffline={isOffline} onDeviceAdded={addDevice} addNotification={addNotification} cardStyle={cardStyle} ironBtn={ironBtn} goldBtn={goldBtn} pill={pill} />}
-        {screen==='group12'    && <Group12Screen T={T} onBack={()=>setScreen('settings')} onImport={(b:Block,d:Device[],s:Sensor[])=>{addBlock(b);d.forEach((dev:Device)=>addDevice(dev));setSensors((p:any)=>({...p,[b.id]:s}));setScreen('home');addNotification({title:'✅ Group 12 Imported',message:`${b.name} added with ${d.length} devices`,type:'success'})}} cardStyle={cardStyle} ironBtn={ironBtn} />}
+        {screen==='group12'    && <Group12Screen T={T} onBack={()=>setScreen('settings')} onImport={(b:Block,d:Device[],s:Sensor[])=>{addBlock(b);d.forEach((dev:Device)=>addDevice(dev));setSensors((p:any)=>({...p,[b.id]:s}));saveGroup12ToAPI({block:b,devices:d,sensors:s});setScreen('home');addNotification({title:'✅ Group 12 Imported',message:`${b.name} added with ${d.length} devices`,type:'success'})}} cardStyle={cardStyle} ironBtn={ironBtn} />}
         {screen==='ngsi'       && <NGSIScreen T={T} blocks={blocks} onBlocksImported={(bs:Block[])=>{bs.forEach((b:Block)=>addBlock(b));setScreen('home')}} cardStyle={cardStyle} ironBtn={ironBtn} />}
         {screen==='architecture' && <ArchitectureScreen T={T} blocks={blocks} apiOnline={apiOnline} cardStyle={cardStyle} darkMode={darkMode} />}
         {screen==='report'    && <ReportScreen T={T} blocks={blocks} sensors={sensors} devices={devices} history={history} weatherData={weatherData} cardStyle={cardStyle} ironBtn={ironBtn} />}
