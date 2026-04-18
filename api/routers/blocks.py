@@ -5,6 +5,7 @@ router = APIRouter()
 
 blocks_db = []
 group12_db = []
+devices_db = []
 
 @router.post("/blocks")
 def save_block(block: dict):
@@ -37,3 +38,13 @@ def get_group12():
     if not group12_db:
         return {"data": None}
     return {"data": group12_db[0]}
+
+@router.post("/devices/sync")
+def sync_devices(data: dict):
+    global devices_db
+    devices_db = data.get("devices", [])
+    return {"status": "synced", "total": len(devices_db)}
+
+@router.get("/devices/sync")
+def get_devices():
+    return {"devices": devices_db, "total": len(devices_db)}

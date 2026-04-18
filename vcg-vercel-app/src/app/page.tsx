@@ -358,22 +358,60 @@ export default function VCGApp() {
         const d=await r.json()
         if(d.data){
           const {block,devices:devs,sensors:sens}=d.data
-          if(block&&!blocks.find(b=>b.id===block.id)){
-            addBlock(block)
-            if(devs) devs.forEach((dev:Device)=>addDevice(dev))
-            if(sens) setSensors((p:any)=>({...p,[block.id]:sens}))
-            addNotification({title:'🤝 Group 12 Loaded',message:'Group 12 data synced from server',type:'success'})
+          if(block){
+            // Always update - overwrite existing Group 12 data
+            setBlocks((p:Block[])=>{
+              const exists=p.find((b:Block)=>b.id===block.id)
+              if(exists) return p.map((b:Block)=>b.id===block.id?block:b)
+              return [...p,block]
+            })
+            if(devs&&devs.length>0){
+              setDevices((p:Device[])=>{
+                const filtered=p.filter((d:Device)=>d.block!==block.id)
+                return [...filtered,...devs]
+              })
+            }
+            if(sens&&sens.length>0){
+              setSensors((p:any)=>({...p,[block.id]:sens}))
+            }
+            addNotification({title:'🤝 Group 12 Synced',message:`Data loaded from server — ${devs?.length||0} devices, ${sens?.length||0} sensors`,type:'success'})
           }
         }
       }
     }catch(e){console.log('Load Group12 from API failed:',e)}
-  },[blocks])
+  },[])
+
+  // Sync devices to API when they change
+  useEffect(()=>{
+    try{localStorage.setItem('vcg_devices',JSON.stringify(devices))}catch{}
+    // Sync to API
+    if(devices.length>0){
+      fetch(BLOCKS_API+'/devices/sync',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({devices})
+      }).catch(()=>{})
+    }
+  },[devices])
+
+  const loadDevicesFromAPI=useCallback(async()=>{
+    try{
+      const r=await fetch(BLOCKS_API+'/devices/sync')
+      if(r.ok){
+        const d=await r.json()
+        if(d.devices&&d.devices.length>0){
+          setDevices(d.devices)
+        }
+      }
+    }catch(e){console.log('Load devices from API failed:',e)}
+  },[])
 
   // Load from API on startup
   useEffect(()=>{
     setTimeout(()=>{
       loadBlocksFromAPI()
       loadGroup12FromAPI()
+      loadDevicesFromAPI()
     },2000) // wait 2s for API to wake up
   },[])
 
@@ -387,6 +425,14 @@ export default function VCGApp() {
 
   const addBlock=(b:Block)=>{setBlocks(p=>[...p,b]);setSensors(p=>({...p,[b.id]:makeSensors()}));setEvs(p=>[...p,{id:`EVC-${b.id}`,block:b.id,status:'IDLE',power:0,sessionTime:0,soc:100}]);setHistory(p=>({...p,[b.id]:makeHistory(b.id)}))}
   const addDevice=(d:Device)=>{setDevices(p=>[...p,d]);addNotification({title:'Device Registered',message:`${d.sfdi} added to ${d.block}`,type:'success'})}
+  const deleteBlock=(id:string)=>{
+    setBlocks(p=>p.filter(b=>b.id!==id))
+    setDevices(p=>p.filter(d=>d.block!==id))
+    setSensors((p:any)=>{const n={...p};delete n[id];return n})
+    // Delete from API
+    fetch(BLOCKS_API+'/'+id,{method:'DELETE'}).catch(()=>{})
+    addNotification({title:'Block Deleted',message:`Block ${id} removed`,type:'info'})
+  }
   const goHome=()=>{setScreen('home');setActiveBlock(null);setActiveDevice(null)}
   const openBlock=(b:Block)=>{setActiveBlock(b);setScreen('block')}
 
@@ -523,7 +569,7 @@ export default function VCGApp() {
       )}
 
       {/* HEADER */}
-      <div style={{position:'relative',zIndex:2,padding:`${isOffline?'44px':'16px'} 20px 72px`,background:darkMode?'linear-gradient(135deg,#0d1117 0%,#1a0a0a 40%,#2d0a0a 70%,#3d1200 100%)':'linear-gradient(135deg,#0d1117 0%,#1a0a0a 60%,#3d1200 100%)'}}>
+      <div style={{position:'relative',zIndex:2,padding:`${isOffline?'44px':'16px'} 16px 72px`,background:darkMode?'linear-gradient(135deg,#0d1117 0%,#1a0a0a 40%,#2d0a0a 70%,#3d1200 100%)':'linear-gradient(135deg,#0d1117 0%,#1a0a0a 60%,#3d1200 100%)'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
           <div style={{display:'flex',alignItems:'center',gap:12}}>
             <div style={{width:42,height:42,borderRadius:14,background:'radial-gradient(circle,#58c4dc,#0d4f6e)',border:'2px solid #58c4dc',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,boxShadow:'0 0 16px rgba(88,196,220,0.5)'}}>⚡</div>
@@ -588,9 +634,9 @@ export default function VCGApp() {
       )}
 
       {/* CONTENT */}
-      <div style={{position:'relative',zIndex:1,padding:'0 16px 120px',maxWidth:900,margin:'-44px auto 0',width:'100%',animation:'pageEnter 0.4s ease'}} key={screen}>
-        {screen==='home'      && <HomeScreen      T={T} blocks={blocks} onBlockClick={openBlock} apiOnline={apiOnline} apiMsg={apiMsg} alerts={alerts} isOffline={isOffline} onAddCommunity={()=>setScreen('import')} onNavigate={setScreen} onStartDemo={()=>{setDemoMode(true);setScreen('home')}} darkMode={darkMode} onInstall={handleInstall} canInstall={!!installPrompt&&!installed} installed={installed} cardStyle={cardStyle} pill={pill} ironBtn={ironBtn} weatherData={weatherData} />}
-        {screen==='block'     && activeBlock && <BlockDetailScreen T={T} block={activeBlock} blocks={blocks} sensors={sensors[activeBlock.id]||[]} evs={evs.filter(e=>e.block===activeBlock.id)} devices={devices.filter(d=>d.block===activeBlock.id)} history={history[activeBlock.id]||[]} onBack={goHome} onRegister={()=>setScreen('register')} onDeviceClick={(d:Device)=>{setActiveDevice(d);setScreen('devices')}} cardStyle={cardStyle} pill={pill} ironBtn={ironBtn} />}
+      <div style={{position:'relative',zIndex:1,padding:'0 12px 120px',maxWidth:900,margin:'-44px auto 0',width:'100%',animation:'pageEnter 0.4s ease',boxSizing:'border-box' as const}} key={screen}>
+        {screen==='home'      && <HomeScreen      T={T} blocks={blocks} onBlockClick={openBlock} apiOnline={apiOnline} apiMsg={apiMsg} alerts={alerts} isOffline={isOffline} onAddCommunity={()=>setScreen('import')} onAddCommunity2={(b:Block)=>addBlock(b)} onNavigate={setScreen} onStartDemo={()=>{setDemoMode(true);setScreen('home')}} darkMode={darkMode} onInstall={handleInstall} canInstall={!!installPrompt&&!installed} installed={installed} cardStyle={cardStyle} pill={pill} ironBtn={ironBtn} weatherData={weatherData} onDeleteBlock={deleteBlock} />}
+        {screen==='block'     && activeBlock && <BlockDetailScreen T={T} block={activeBlock} blocks={blocks} sensors={sensors[activeBlock.id]||[]} evs={evs.filter(e=>e.block===activeBlock.id)} devices={devices.filter(d=>d.block===activeBlock.id)} history={history[activeBlock.id]||[]} onBack={goHome} onRegister={()=>setScreen('register')} onDeviceClick={(d:Device)=>{setActiveDevice(d);setScreen('devices')}} onDeleteBlock={(id:string)=>{deleteBlock(id);goHome()}} onDeviceDelete={(sfdi:string)=>setDevices(p=>p.filter(d=>d.sfdi!==sfdi))} cardStyle={cardStyle} pill={pill} ironBtn={ironBtn} darkMode={darkMode} />}
         {screen==='charts'    && <ChartsScreen    T={T} blocks={blocks} history={history} sensors={sensors} cardStyle={cardStyle} darkMode={darkMode} />}
         {screen==='alerts'    && <AlertsScreen    T={T} alerts={alerts} onMarkRead={(id:string)=>setAlerts(p=>p.map(a=>a.id===id?{...a,read:true}:a))} onMarkAll={()=>setAlerts(p=>p.map(a=>({...a,read:true})))} cardStyle={cardStyle} pill={pill} />}
         {screen==='demand'    && <DemandScreen    T={T} blocks={blocks} apiOnline={apiOnline} cardStyle={cardStyle} pill={pill} goldBtn={goldBtn} />}
@@ -611,8 +657,8 @@ export default function VCGApp() {
       </div>
 
       {/* BOTTOM NAV */}
-      <div style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:900,background:darkMode?'rgba(22,27,34,0.97)':'rgba(255,255,255,0.97)',borderTop:`2px solid ${T.red}30`,zIndex:50,boxShadow:'0 -4px 24px rgba(230,57,70,0.15)',backdropFilter:'blur(16px)',padding:'8px 0 18px'}}>
-        <div style={{display:'flex',justifyContent:'space-around'}}>
+      <div style={{position:'fixed',bottom:0,left:0,right:0,background:darkMode?'rgba(22,27,34,0.97)':'rgba(255,255,255,0.97)',borderTop:`2px solid ${T.red}30`,zIndex:50,boxShadow:'0 -4px 24px rgba(230,57,70,0.15)',backdropFilter:'blur(16px)',padding:'8px 0 18px'}}>
+        <div style={{display:'flex',justifyContent:'space-around',maxWidth:900,margin:'0 auto'}}>
           {NAV.map(t=>(
             <button key={t.id} onClick={()=>{setActiveBlock(null);setScreen(t.id as Screen)}} style={{background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:2,padding:'0 8px',position:'relative'}}>
               <div style={{width:42,height:42,borderRadius:14,background:screen===t.id?'linear-gradient(135deg,#c1121f,#e63946)':'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,transition:'all 0.2s',boxShadow:screen===t.id?'0 4px 12px rgba(230,57,70,0.5)':undefined}}>
@@ -977,8 +1023,31 @@ function HBarChart({data,T}:{data:{label:string;value:number;max:number;color:st
 }
 
 // ── HOME ──────────────────────────────────────────────────────────────────────
-function HomeScreen({T,blocks,onBlockClick,apiOnline,apiMsg,alerts,isOffline,onAddCommunity,onNavigate,darkMode,cardStyle,pill,ironBtn,weatherData}:any) {
+function HomeScreen({T,blocks,onBlockClick,apiOnline,apiMsg,alerts,isOffline,onAddCommunity,onAddCommunity2,onNavigate,darkMode,cardStyle,pill,ironBtn,weatherData,onDeleteBlock}:any) {
   const unread=alerts.filter((a:Alert)=>!a.read).length
+  const [showAddForm,setShowAddForm]=useState(false)
+  const [newBlock,setNewBlock]=useState({name:'',location:'',generation:'',consumption:''})
+  const COLORS=['#e63946','#ffd60a','#58c4dc','#10b981','#f97316','#8b5cf6','#ec4899']
+  const EMOJIS=['🏙️','🏘️','🌆','🌉','🏚️','🌃','🏗️']
+
+  const handleAddBlock=()=>{
+    if(!newBlock.name||!newBlock.location){return}
+    const gen=parseFloat(newBlock.generation)||100
+    const con=parseFloat(newBlock.consumption)||80
+    const net=+(gen-con).toFixed(1)
+    const idx=blocks.length
+    const b:any={
+      id:'BLK-'+newBlock.name.replace(/\s+/g,'-').toUpperCase().slice(0,6)+'-'+Date.now().toString(36).slice(-3).toUpperCase(),
+      name:newBlock.name, location:newBlock.location,
+      emoji:EMOJIS[idx%EMOJIS.length], generation:gen, consumption:con, net,
+      status:net>0?'Surplus':'Deficit', devices:0,
+      color:COLORS[idx%COLORS.length], lat:53+Math.random()*2, lng:-8+Math.random()*3
+    }
+    onAddCommunity2(b)
+    setNewBlock({name:'',location:'',generation:'',consumption:''})
+    setShowAddForm(false)
+  }
+
   return (
     <div style={{display:'flex',flexDirection:'column',gap:14}}>
       {!isOffline&&apiOnline&&apiMsg&&<div style={{background:T.greenL,border:`1px solid ${T.green}40`,borderRadius:16,padding:'10px 14px',display:'flex',alignItems:'center',gap:8}}><span>✅</span><span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:11,color:T.green}}>{apiMsg}</span></div>}
@@ -1009,8 +1078,40 @@ function HomeScreen({T,blocks,onBlockClick,apiOnline,apiMsg,alerts,isOffline,onA
 
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
         <div><div style={{fontWeight:900,fontSize:17,color:T.text}}>Energy Communities</div><div style={{fontSize:12,color:T.text2,marginTop:1}}>{blocks.length} blocks · tap to explore</div></div>
-        <button onClick={onAddCommunity} style={ironBtn({width:'auto',padding:'9px 16px',fontSize:12})}>＋ Add</button>
+        <button onClick={()=>setShowAddForm(true)} style={ironBtn({width:'auto',padding:'9px 16px',fontSize:12})}>＋ Add Block</button>
       </div>
+      {/* Add Block Modal */}
+      {showAddForm&&(
+        <div style={{background:T.card,borderRadius:20,padding:20,border:`2px solid ${T.red}`,boxShadow:`0 8px 32px ${T.red}30`}}>
+          <div style={{fontFamily:"'Orbitron',monospace",fontSize:15,color:T.red,marginBottom:16,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            ➕ New Community
+            <button onClick={()=>setShowAddForm(false)} style={{background:'none',border:'none',fontSize:20,cursor:'pointer',color:T.text3}}>×</button>
+          </div>
+          <div style={{display:'flex',flexDirection:'column',gap:10}}>
+            {[
+              {l:'Community Name *',k:'name',ph:'e.g. Block E'},
+              {l:'Location *',k:'location',ph:'e.g. Waterford'},
+              {l:'Generation (kW)',k:'generation',ph:'e.g. 120'},
+              {l:'Consumption (kW)',k:'consumption',ph:'e.g. 95'},
+            ].map(f=>(
+              <div key={f.k}>
+                <label style={{fontSize:11,fontWeight:700,color:T.text2,display:'block',marginBottom:4}}>{f.l}</label>
+                <input placeholder={f.ph} value={(newBlock as any)[f.k]}
+                  onChange={e=>setNewBlock(p=>({...p,[f.k]:e.target.value}))}
+                  style={{width:'100%',padding:'10px 14px',border:`1.5px solid ${T.border}`,borderRadius:12,
+                    fontSize:14,color:T.text,background:T.bg,outline:'none',boxSizing:'border-box' as const}}
+                  onFocus={e=>(e.target.style.borderColor=T.red)}
+                  onBlur={e=>(e.target.style.borderColor=T.border)}/>
+              </div>
+            ))}
+            <div style={{display:'flex',gap:8,marginTop:4}}>
+              <button onClick={handleAddBlock} style={ironBtn({flex:1})}>✅ Add Community</button>
+              <button onClick={()=>setShowAddForm(false)} style={{flex:1,background:T.bg,border:`1px solid ${T.border}`,borderRadius:14,padding:'13px',fontWeight:700,fontSize:14,cursor:'pointer',color:T.text2}}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {blocks.map((b:Block,i:number)=>(
         <div key={b.id} onClick={()=>onBlockClick(b)} style={{...cardStyle(),cursor:'pointer',transition:'all 0.2s',borderLeft:`4px solid ${b.color}`}}
           onMouseOver={e=>{e.currentTarget.style.transform='translateY(-2px)';e.currentTarget.style.boxShadow=`0 8px 28px ${b.color}25`}}
@@ -1020,7 +1121,14 @@ function HomeScreen({T,blocks,onBlockClick,apiOnline,apiMsg,alerts,isOffline,onA
               <div style={{width:48,height:48,borderRadius:16,background:`${b.color}20`,border:`2px solid ${b.color}60`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:24}}>{b.emoji}</div>
               <div><div style={{fontWeight:800,fontSize:16,color:T.text}}>{b.name} — {b.location}</div><div style={{fontFamily:"'Share Tech Mono',monospace",fontSize:10,color:T.text3,marginTop:2}}>{b.id} · {b.devices} devices</div></div>
             </div>
-            <div style={pill(b.status==='Surplus'?T.green:b.status==='Deficit'?T.red:T.arc)}>{b.status}</div>
+            <div style={{display:'flex',gap:6,alignItems:'center'}}>
+              <div style={pill(b.status==='Surplus'?T.green:b.status==='Deficit'?T.red:T.arc)}>{b.status}</div>
+              {!['BLK-A','BLK-B','BLK-C','BLK-D'].includes(b.id)&&(
+                <button onClick={e=>{e.stopPropagation();if(window.confirm('Delete '+b.name+'?')) onDeleteBlock(b.id)}}
+                  style={{background:'rgba(230,57,70,0.15)',border:'1px solid rgba(230,57,70,0.3)',
+                    borderRadius:8,padding:'3px 8px',fontSize:12,color:T.red,cursor:'pointer',fontWeight:700,lineHeight:1}}>✕</button>
+              )}
+            </div>
           </div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
             {[{l:'Gen kW',v:b.generation.toFixed(1),c:T.green},{l:'Con kW',v:b.consumption.toFixed(1),c:T.amber},{l:'Net kW',v:(b.net>=0?'+':'')+b.net.toFixed(1),c:b.status==='Surplus'?T.green:b.status==='Deficit'?T.red:T.arc}].map(s=>(
@@ -1083,7 +1191,7 @@ function ChartsScreen({T,blocks,history,sensors,cardStyle,darkMode}:any) {
 }
 
 // ── BLOCK DETAIL ──────────────────────────────────────────────────────────────
-function BlockDetailScreen({T,block:b,blocks,sensors,evs,devices,history,onBack,onRegister,onDeviceClick,cardStyle,pill,ironBtn}:any) {
+function BlockDetailScreen({T,block:b,blocks,sensors,evs,devices,history,onBack,onRegister,onDeviceClick,onDeviceDelete,onDeleteBlock,darkMode,cardStyle,pill,ironBtn}:any) {
   const live=blocks.find((x:Block)=>x.id===b.id)||b
   const sc=live.status==='Surplus'?T.green:live.status==='Deficit'?T.red:T.arc
   const recentH=(history||[]).slice(-6)
@@ -1105,14 +1213,170 @@ function BlockDetailScreen({T,block:b,blocks,sensors,evs,devices,history,onBack,
       </div>
       {recentH.length>0&&<><SH T={T} title="Energy Trend" /><div style={cardStyle({padding:'14px 10px'})}><BarChart data={recentH.map((h:HistoryEntry)=>({label:h.time,values:[+h.generation,+h.consumption]}))} colors={[T.green,T.red]} height={90} T={T}/></div></>}
       <SH T={T} title="Sensor Parameters" />
-      {/* Circular gauges for key sensors */}
-      <div style={cardStyle({})}>
-        <div style={{fontWeight:700,fontSize:12,color:T.text2,marginBottom:16,fontFamily:"'Share Tech Mono',monospace",letterSpacing:1,textTransform:'uppercase'}}>Key Metrics</div>
-        <div style={{display:'flex',justifyContent:'space-around',flexWrap:'wrap',gap:12}}>
-          {sensors.slice(0,4).map((s:Sensor)=>(
-            <CircularGauge key={s.label} value={+s.value} max={s.label==='Temperature'?50:s.label==='Solar Irradiance'?1000:s.label==='Battery SOC'?100:10} label={s.label} unit={s.unit} color={s.color} size={88}/>
+      {/* Iron Man Arc Reactor — connected to devices and live energy */}
+      <div style={{background:'#0a0c10',borderRadius:24,padding:20,border:'1px solid rgba(255,214,10,0.2)',boxShadow:'0 8px 32px rgba(0,0,0,0.6)'}}>
+        <style>{`
+          @keyframes arcR1{to{transform:rotate(360deg)}}
+          @keyframes arcR2{to{transform:rotate(-360deg)}}
+          @keyframes arcCore{0%,100%{box-shadow:0 0 16px rgba(88,196,220,0.9),0 0 32px rgba(88,196,220,0.4),inset 0 0 16px rgba(88,196,220,0.3)}50%{box-shadow:0 0 32px rgba(88,196,220,1),0 0 64px rgba(88,196,220,0.5),0 0 100px rgba(255,214,10,0.15),inset 0 0 24px rgba(88,196,220,0.6)}}
+          @keyframes arcHex{0%,100%{opacity:0.5;transform:scale(1)}50%{opacity:1;transform:scale(1.3)}}
+          @keyframes devPulse{0%,100%{opacity:0.4;transform:scale(0.95)}50%{opacity:1;transform:scale(1.05)}}
+          @keyframes lineFlow{0%{stroke-dashoffset:20}100%{stroke-dashoffset:0}}
+        `}</style>
+
+        {/* Title */}
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
+          <div style={{fontFamily:"'Orbitron',monospace",fontSize:13,color:'#ffd60a',letterSpacing:2}}>⚡ ARC REACTOR GRID</div>
+          <div style={{fontFamily:"'Share Tech Mono',monospace",fontSize:10,color:'rgba(88,196,220,0.7)'}}>{devices.length} DEVICES ONLINE</div>
+        </div>
+
+        {/* Main reactor SVG with connected devices */}
+        <svg width="100%" viewBox="0 0 320 320" style={{display:'block',overflow:'visible'}}>
+          {/* Connection lines from reactor to devices */}
+          {devices.slice(0,6).map((_:any,i:number)=>{
+            const angle=(i/Math.min(devices.length,6))*2*Math.PI - Math.PI/2
+            const x2=160+120*Math.cos(angle), y2=160+120*Math.sin(angle)
+            return (
+              <line key={i} x1={160} y1={160} x2={x2} y2={y2}
+                stroke="rgba(88,196,220,0.3)" strokeWidth={1}
+                strokeDasharray="4,4"
+                style={{animation:'lineFlow 1s linear infinite',animationDelay:`${i*0.15}s`}}/>
+            )
+          })}
+
+          {/* Device nodes around reactor */}
+          {devices.slice(0,6).map((d:Device,i:number)=>{
+            const angle=(i/Math.min(devices.length,6))*2*Math.PI - Math.PI/2
+            const x=160+120*Math.cos(angle), y=160+120*Math.sin(angle)
+            const icons:Record<string,string>={'Smart Meter':'📟','Solar Inverter':'☀️','EV Charger':'🚗','Wind Turbine':'💨','Battery Storage':'🔋','HVAC Unit':'❄️','Load Controller':'🔌'}
+            const icon=icons[d.type]||'📟'
+            const isOnline=d.status==='Online'
+            return (
+              <g key={d.sfdi} style={{animation:'devPulse 2s ease-in-out infinite',animationDelay:`${i*0.3}s`}}>
+                <circle cx={x} cy={y} r={24} fill={isOnline?'rgba(16,185,129,0.15)':'rgba(230,57,70,0.15)'}
+                  stroke={isOnline?'#10b981':'#e63946'} strokeWidth={1.5}/>
+                <text x={x} y={y+1} textAnchor="middle" dominantBaseline="middle" fontSize="16">{icon}</text>
+                <text x={x} y={y+18} textAnchor="middle" fontSize="7" fill={isOnline?'#10b981':'#e63946'}
+                  fontFamily="Share Tech Mono,monospace">{d.sfdi.slice(-6)}</text>
+                {d.power&&d.power>0&&<text x={x} y={y+27} textAnchor="middle" fontSize="6.5"
+                  fill="rgba(255,214,10,0.8)" fontFamily="Share Tech Mono,monospace">{(d.power/1000).toFixed(1)}kW</text>}
+              </g>
+            )
+          })}
+
+          {/* No devices placeholder */}
+          {devices.length===0&&(
+            <text x={160} y={260} textAnchor="middle" fontSize="11" fill="rgba(255,255,255,0.3)"
+              fontFamily="Share Tech Mono,monospace">No devices registered</text>
+          )}
+
+          {/* Outer orbit ring */}
+          <circle cx={160} cy={160} r={95} fill="none" stroke="rgba(255,214,10,0.08)" strokeWidth={1} strokeDasharray="3,6"/>
+
+          {/* Arc reactor core */}
+          <g>
+            {/* Outer glow */}
+            <circle cx={160} cy={160} r={55} fill="none" stroke="rgba(255,214,10,0.15)" strokeWidth={8}/>
+            {/* Gold ring */}
+            <circle cx={160} cy={160} r={52} fill="rgba(13,17,23,0.9)" stroke="#ffd60a" strokeWidth={2}/>
+            {/* Spinning red ring */}
+            <circle cx={160} cy={160} r={44} fill="none" stroke="#e63946" strokeWidth={2}
+              strokeDasharray="8,5" style={{animation:'arcR2 3s linear infinite',transformOrigin:'160px 160px'}}/>
+            {/* Spinning blue ring */}
+            <circle cx={160} cy={160} r={36} fill="none" stroke="#58c4dc" strokeWidth={1.5}
+              strokeDasharray="5,4" style={{animation:'arcR1 2s linear infinite',transformOrigin:'160px 160px'}}/>
+            {/* Inner gold ring */}
+            <circle cx={160} cy={160} r={28} fill="none" stroke="rgba(255,214,10,0.4)" strokeWidth={1}
+              style={{animation:'arcR2 6s linear infinite',transformOrigin:'160px 160px'}}/>
+            {/* Hex dots on reactor */}
+            {[0,60,120,180,240,300].map((angle:number)=>{
+              const rx=160+42*Math.cos(angle*Math.PI/180)
+              const ry=160+42*Math.sin(angle*Math.PI/180)
+              return <circle key={angle} cx={rx} cy={ry} r={4} fill="#58c4dc"
+                style={{animation:`arcHex 2s ease-in-out infinite`,animationDelay:`${angle/360}s`}}
+                filter="url(#glow)"/>
+            })}
+            {/* Core circle */}
+            <circle cx={160} cy={160} r={22} fill="url(#coreGrad)"
+              style={{animation:'arcCore 2.5s ease-in-out infinite',transformOrigin:'160px 160px'}}/>
+
+            {/* Energy stats in core */}
+            <text x={160} y={152} textAnchor="middle" fontSize="9" fill="#ffd60a"
+              fontFamily="Orbitron,monospace" fontWeight="700">{live.generation.toFixed(0)}</text>
+            <text x={160} y={162} textAnchor="middle" fontSize="6" fill="rgba(255,255,255,0.5)"
+              fontFamily="Share Tech Mono,monospace">kW GEN</text>
+            <text x={160} y={174} textAnchor="middle" fontSize="8" fill={live.net>=0?'#10b981':'#e63946'}
+              fontFamily="Orbitron,monospace" fontWeight="700">{live.net>=0?'+':''}{live.net.toFixed(0)}</text>
+            <text x={160} y={183} textAnchor="middle" fontSize="6" fill="rgba(255,255,255,0.4)"
+              fontFamily="Share Tech Mono,monospace">NET kW</text>
+
+            <defs>
+              <radialGradient id="coreGrad" cx="40%" cy="40%">
+                <stop offset="0%" stopColor="#7dd5e8"/>
+                <stop offset="50%" stopColor="#0d4f6e"/>
+                <stop offset="100%" stopColor="#061a28"/>
+              </radialGradient>
+              <filter id="glow">
+                <feGaussianBlur stdDeviation="2" result="blur"/>
+                <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+            </defs>
+          </g>
+        </svg>
+
+        {/* Live stats below reactor */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:16}}>
+          {[
+            {icon:'⚡',label:'Generation',value:live.generation.toFixed(1)+' kW',color:'#ffd60a'},
+            {icon:'🔌',label:'Consumption',value:live.consumption.toFixed(1)+' kW',color:'#f97316'},
+            {icon:'📊',label:'Net Balance',value:(live.net>=0?'+':'')+live.net.toFixed(1)+' kW',color:live.net>=0?'#10b981':'#e63946'},
+          ].map(s=>(
+            <div key={s.label} style={{background:'rgba(255,255,255,0.04)',borderRadius:12,padding:'10px 6px',
+              textAlign:'center',border:`1px solid ${s.color}20`}}>
+              <div style={{fontSize:16,marginBottom:4}}>{s.icon}</div>
+              <div style={{fontFamily:"'Orbitron',monospace",fontSize:13,fontWeight:700,color:s.color,lineHeight:1}}>{s.value}</div>
+              <div style={{fontSize:8,color:'rgba(255,255,255,0.4)',marginTop:3,textTransform:'uppercase' as const,letterSpacing:0.8}}>{s.label}</div>
+            </div>
           ))}
         </div>
+
+        {/* Device status strip */}
+        {devices.length>0&&(
+          <div style={{display:'flex',gap:6,marginTop:12,flexWrap:'wrap' as const}}>
+            {devices.slice(0,8).map((d:Device,i:number)=>(
+              <div key={d.sfdi} style={{display:'flex',alignItems:'center',gap:4,padding:'4px 8px',
+                background:'rgba(255,255,255,0.04)',borderRadius:20,
+                border:`1px solid ${d.status==='Online'?'rgba(16,185,129,0.4)':'rgba(230,57,70,0.4)'}`}}>
+                <div style={{width:5,height:5,borderRadius:'50%',
+                  background:d.status==='Online'?'#10b981':'#e63946',
+                  boxShadow:`0 0 4px ${d.status==='Online'?'#10b981':'#e63946'}`}}/>
+                <span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:9,
+                  color:d.status==='Online'?'#10b981':'rgba(255,255,255,0.4)'}}>{d.sfdi.slice(-6)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Sensor gauges below reactor */}
+      <SH T={T} title="Sensor Readings" />
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+        {sensors.slice(0,4).map((s:Sensor)=>(
+          <div key={s.label} style={cardStyle({padding:'14px',background:'#0a0c10',border:'1px solid rgba(255,214,10,0.12)'})}>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
+              <span style={{fontSize:22}}>{s.icon}</span>
+              <span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:9,color:'rgba(255,255,255,0.4)',
+                background:'rgba(255,255,255,0.06)',padding:'2px 8px',borderRadius:6}}>{s.unit}</span>
+            </div>
+            <div style={{fontFamily:"'Orbitron',monospace",fontSize:26,fontWeight:700,color:s.color,lineHeight:1,marginBottom:4}}>{s.value}</div>
+            <div style={{fontSize:11,color:'rgba(255,255,255,0.5)',marginBottom:8}}>{s.label}</div>
+            <div style={{height:3,background:'rgba(255,255,255,0.06)',borderRadius:2}}>
+              <div style={{height:'100%',width:Math.min(s.bar,100)+'%',
+                background:`linear-gradient(90deg,${s.color}60,${s.color})`,
+                borderRadius:2,boxShadow:`0 0 6px ${s.color}40`}}/>
+            </div>
+          </div>
+        ))}
       </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
         {sensors.map((s:Sensor,i:number)=>(
@@ -1135,16 +1399,36 @@ function BlockDetailScreen({T,block:b,blocks,sensors,evs,devices,history,onBack,
       <div style={cardStyle({padding:16})}>
         {devices.length===0?<div style={{textAlign:'center',padding:'16px 0'}}><div style={{fontSize:32,marginBottom:8}}>📭</div><div style={{fontSize:13,color:T.text2}}>No devices</div></div>:(
           <div style={{display:'flex',flexDirection:'column',gap:8}}>{devices.map((d:Device,i:number)=>(
-            <div key={i} onClick={()=>onDeviceClick(d)} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 12px',background:T.bg,borderRadius:12,border:`1px solid ${T.border}`,cursor:'pointer',transition:'all 0.15s'}}
-              onMouseOver={e=>{e.currentTarget.style.borderColor=T.arc+'50'}} onMouseOut={e=>{e.currentTarget.style.borderColor=T.border}}>
-              <div style={{width:36,height:36,borderRadius:10,background:T.arcLight,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16}}>📟</div>
-              <div style={{flex:1}}><div style={{fontFamily:"'Share Tech Mono',monospace",fontWeight:700,fontSize:12,color:T.arc}}>{d.sfdi}</div><div style={{fontSize:11,color:T.text3}}>{d.type}</div></div>
-              <div style={pill(d.status==='Online'?T.green:T.amber)}>{d.status}</div>
+            <div key={i} style={{display:'flex',alignItems:'center',background:T.bg,borderRadius:12,border:`1px solid ${T.border}`,overflow:'hidden',transition:'all 0.15s'}}>
+              <div onClick={()=>onDeviceClick(d)} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 12px',flex:1,cursor:'pointer'}}
+                onMouseOver={e=>{e.currentTarget.parentElement!.style.borderColor=T.arc+'50'}}
+                onMouseOut={e=>{e.currentTarget.parentElement!.style.borderColor=T.border}}>
+                <div style={{width:36,height:36,borderRadius:10,background:T.arcLight,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16}}>📟</div>
+                <div style={{flex:1}}>
+                  <div style={{fontFamily:"'Share Tech Mono',monospace",fontWeight:700,fontSize:12,color:T.arc}}>{d.sfdi}</div>
+                  <div style={{fontSize:11,color:T.text3}}>{d.type}</div>
+                </div>
+                <div style={pill(d.status==='Online'?T.green:T.amber)}>{d.status}</div>
+              </div>
+              <button onClick={()=>{if(window.confirm('Delete '+d.sfdi+'?')) onDeviceDelete(d.sfdi)}}
+                style={{background:'rgba(230,57,70,0.1)',border:'none',borderLeft:`1px solid ${T.border}`,
+                  padding:'0 12px',alignSelf:'stretch',cursor:'pointer',color:T.red,
+                  fontSize:16,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                🗑️
+              </button>
             </div>
           ))}</div>
         )}
       </div>
       <button onClick={onRegister} style={ironBtn()}>➕ Register Device to {b.name}</button>
+      {!['BLK-A','BLK-B','BLK-C','BLK-D'].includes(b.id)&&(
+        <button onClick={()=>{if(window.confirm('Delete '+b.name+' and all its devices?')) onDeleteBlock(b.id)}}
+          style={{background:'rgba(230,57,70,0.1)',border:`1px solid ${T.red}40`,borderRadius:14,
+            padding:'13px',fontWeight:700,fontSize:14,cursor:'pointer',width:'100%',
+            display:'flex',alignItems:'center',justifyContent:'center',gap:8,color:T.red}}>
+          🗑️ Delete {b.name}
+        </button>
+      )}
     </div>
   )
 }
@@ -1687,7 +1971,7 @@ function DevicesScreen({T,devices,blocks,activeDevice,onDelete,cardStyle,pill,ir
         {[{l:'LFDI',v:sel.lfdi||'—'},{l:'Type',v:sel.type},{l:'Block',v:blocks.find((b:Block)=>b.id===sel.block)?.name||sel.block},{l:'Power',v:sel.power?sel.power+'W':'—'},{l:'Voltage',v:sel.voltage?sel.voltage+'V':'—'},{l:'Last Seen',v:sel.lastSeen||'—'}].map(r=>(
           <div key={r.l} style={{display:'flex',justifyContent:'space-between',padding:'10px 0',borderBottom:`1px solid ${T.border}`}}><span style={{fontSize:12,color:T.text2,fontWeight:600}}>{r.l}</span><span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:12,color:T.text,fontWeight:700,maxWidth:'55%',textAlign:'right'}}>{r.v}</span></div>
         ))}
-        <button onClick={()=>{onDelete(sel.sfdi);setSel(null)}} style={{...ironBtn(),marginTop:16,background:T.redLight,color:T.red,boxShadow:'none',border:`1px solid ${T.red}30`}}>🗑️ Deregister</button>
+        <button onClick={()=>{if(window.confirm('Delete device '+sel.sfdi+'?')){onDelete(sel.sfdi);setSel(null)}}} style={{...ironBtn(),marginTop:16,background:T.redLight,color:T.red,boxShadow:'none',border:`1px solid ${T.red}30`}}>🗑️ Delete Device</button>
       </div>
     </div>
   )
@@ -1697,12 +1981,24 @@ function DevicesScreen({T,devices,blocks,activeDevice,onDelete,cardStyle,pill,ir
       {blocks.map((b:Block)=>{const bd=devices.filter((d:Device)=>d.block===b.id);if(!bd.length) return null;return(
         <div key={b.id}><div style={{fontWeight:700,fontSize:12,color:T.text2,padding:'4px 4px 8px',display:'flex',alignItems:'center',gap:6}}><span>{b.emoji}</span>{b.name} — {b.location}</div>
           <div style={{display:'flex',flexDirection:'column',gap:8}}>{bd.map((d:Device,i:number)=>(
-            <div key={i} onClick={()=>setSel(d)} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 14px',background:T.card,borderRadius:16,border:`1px solid ${T.border}`,cursor:'pointer',transition:'all 0.15s'}}
-              onMouseOver={e=>{e.currentTarget.style.borderColor=T.arc+'50'}} onMouseOut={e=>{e.currentTarget.style.borderColor=T.border}}>
-              <div style={{width:38,height:38,borderRadius:12,background:b.color+'15',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>📟</div>
-              <div style={{flex:1}}><div style={{fontFamily:"'Share Tech Mono',monospace",fontWeight:700,fontSize:12,color:T.arc}}>{d.sfdi}</div><div style={{fontSize:11,color:T.text3}}>{d.type}{d.power?` · ${d.power}W`:''}</div></div>
-              <div style={pill(d.status==='Online'?T.green:T.amber)}>{d.status}</div>
-              <span style={{color:T.text3}}>›</span>
+            <div key={i} style={{display:'flex',alignItems:'center',background:T.card,borderRadius:16,border:`1px solid ${T.border}`,overflow:'hidden',transition:'all 0.15s'}}>
+              <div onClick={()=>setSel(d)} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 14px',flex:1,cursor:'pointer'}}
+                onMouseOver={e=>{e.currentTarget.parentElement!.style.borderColor=T.arc+'50'}}
+                onMouseOut={e=>{e.currentTarget.parentElement!.style.borderColor=T.border}}>
+                <div style={{width:38,height:38,borderRadius:12,background:b.color+'15',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>📟</div>
+                <div style={{flex:1}}>
+                  <div style={{fontFamily:"'Share Tech Mono',monospace",fontWeight:700,fontSize:12,color:T.arc}}>{d.sfdi}</div>
+                  <div style={{fontSize:11,color:T.text3}}>{d.type}{d.power?` · ${d.power}W`:''}</div>
+                </div>
+                <div style={pill(d.status==='Online'?T.green:T.amber)}>{d.status}</div>
+                <span style={{color:T.text3,marginLeft:4}}>›</span>
+              </div>
+              <button onClick={()=>{if(window.confirm('Delete '+d.sfdi+'?')) onDelete(d.sfdi)}}
+                style={{background:'rgba(230,57,70,0.1)',border:'none',borderLeft:`1px solid ${T.border}`,
+                  padding:'0 16px',alignSelf:'stretch',cursor:'pointer',color:T.red,
+                  fontSize:18,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                🗑️
+              </button>
             </div>
           ))}</div>
         </div>
