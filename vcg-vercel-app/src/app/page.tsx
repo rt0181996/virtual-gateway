@@ -386,7 +386,7 @@ export default function VCGApp() {
     try{localStorage.setItem('vcg_devices',JSON.stringify(devices))}catch{}
     // Sync to API
     if(devices.length>0){
-      fetch(BLOCKS_API+'/devices/sync',{
+      fetch(API_V1+'/devices/sync',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({devices})
@@ -396,7 +396,7 @@ export default function VCGApp() {
 
   const loadDevicesFromAPI=useCallback(async()=>{
     try{
-      const r=await fetch(BLOCKS_API+'/devices/sync')
+      const r=await fetch(API_V1+'/devices/sync')
       if(r.ok){
         const d=await r.json()
         if(d.devices&&d.devices.length>0){
@@ -406,13 +406,23 @@ export default function VCGApp() {
     }catch(e){console.log('Load devices from API failed:',e)}
   },[])
 
-  // Load from API on startup
+  // Load from API on every app open - no cache dependency
   useEffect(()=>{
-    setTimeout(()=>{
-      loadBlocksFromAPI()
-      loadGroup12FromAPI()
+    // Try immediately first
+    loadDevicesFromAPI()
+    loadGroup12FromAPI()
+    loadBlocksFromAPI()
+    // Then retry after API wakes up (Render free tier spins down)
+    const t1=setTimeout(()=>{
       loadDevicesFromAPI()
-    },2000) // wait 2s for API to wake up
+      loadGroup12FromAPI()
+    },3000)
+    const t2=setTimeout(()=>{
+      loadDevicesFromAPI()
+      loadGroup12FromAPI()
+      loadBlocksFromAPI()
+    },8000)
+    return ()=>{clearTimeout(t1);clearTimeout(t2)}
   },[])
 
   const checkApi=useCallback(async()=>{
