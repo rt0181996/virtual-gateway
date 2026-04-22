@@ -48,5 +48,3 @@ def sync_devices(data: dict):
 @router.get("/devices/sync")
 def get_devices():
     return {"devices": devices_db, "total": len(devices_db)}
-
-# Force rebuild 2026-04-22 14:42:22
